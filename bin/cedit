@@ -1,0 +1,103 @@
+#!/usr/bin/env ruby
+
+require 'openssl'
+require 'base64'
+require 'io/console'
+
+def get_password
+  STDERR.print 'password: '
+  STDERR.flush
+  password = STDIN.noecho(&:gets).chomp
+  STDERR.puts ''
+  password
+end
+
+def make_key_iv(enc, password, salt)
+  key_iv = OpenSSL::PKCS5.pbkdf2_hmac(password, salt, 10000, enc.key_len + enc.iv_len, 'sha256')
+  key = key_iv[0, enc.key_len]
+  iv = key_iv[enc.key_len, enc.iv_len]
+  [key, iv]
+end
+
+def encrypt(data, password)
+  salt = OpenSSL::Random.random_bytes(8)
+  enc = OpenSSL::Cipher.new('AES-256-CBC')
+  enc.encrypt
+
+  key, iv = make_key_iv(enc, password, salt)
+  enc.key = key
+  enc.iv = iv
+
+  encrypted_data = ''
+  encrypted_data << enc.update(data)
+  encrypted_data << enc.final
+
+  [Base64.encode64(salt).chomp, '$', Base64.encode64(encrypted_data).chomp].join
+end
+
+def decrypt(data, password)
+  dec = OpenSSL::Cipher.new('AES-256-CBC')
+  dec.decrypt
+
+  salt, encrypted = data.split('$')
+  salt = Base64.decode64(salt)
+  encrypted = Base64.decode64(encrypted)
+  key, iv = make_key_iv(dec, password, salt)
+  dec.key = key
+  dec.iv = iv
+
+  decrypted_data = ''
+  decrypted_data << dec.update(encrypted)
+  decrypted_data << dec.final
+
+  decrypted_data.chomp
+end
+
+def env_key_path(env_name)
+  "config/credentials/#{env_name}.key"
+end
+
+def encrypted_key_path(env_name)
+  "config/credentials/#{env_name}.key.enc"
+end
+
+def edit(env_name)
+  password = get_password
+  decrypted = decrypt(File.read(encrypted_key_path(env_name)), password)
+  env = {
+    'RAILS_MASTER_KEY' => decrypted
+  }
+  system(env, "bin/rails credentials:edit --environment #{env_name}")
+end
+
+def usage
+  puts <<~END_OF_USAGE
+    Usage: cedit COMMAND ENVIRONMENT
+    Encrypt credential master key:
+      cedit enc ENVRIONMENT
+    Decrypt credential master key:
+      cedit dec ENVIRONMENT
+    Edit credential with encrypted master key:
+      cedit edit ENVIRONMENT
+  END_OF_USAGE
+end
+
+command = ARGV.shift
+case command
+when 'enc'
+  env_name = ARGV.shift
+  password = get_password
+  key = File.read(env_key_path(env_name))
+  encrypted = encrypt(key, password)
+  File.write(encrypted_key_path(env_name), encrypted)
+when 'dec'
+  env_name = ARGV.shift
+  password = get_password
+  decrypted = decrypt(File.read(encrypted_key_path(env_name)), password)
+  File.write(env_key_path(env_name), decrypted)
+when 'edit'
+  env_name = ARGV.shift
+  edit(env_name)
+else
+  usage
+end
