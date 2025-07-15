@@ -1,0 +1,16 @@
+#!/usr/bin/env ruby
+
+project_name = File.basename(Dir.pwd)
+rails_env = ARGV.shift
+
+env = {
+  "RAILS_MASTER_KEY" => "op://Private/#{project_name} keys/#{rails_env}",
+  "EDITOR" => "code -w",
+}
+
+unless system("op whoami > /dev/null 2>&1")
+  puts "Not signed in to 1Password. Please run `eval $(op signin)`."
+  exit 1
+end
+
+system(env, "op run -- bundle exec rails credentials:edit --environment=#{rails_env}")

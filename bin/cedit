@@ -8,6 +8,7 @@ def get_password
   STDERR.print 'password: '
   STDERR.flush
   password = STDIN.noecho(&:gets).chomp
+  # puts password
   STDERR.puts ''
   password
 end
@@ -49,6 +50,7 @@ def decrypt(data, password)
   decrypted_data = ''
   decrypted_data << dec.update(encrypted)
   decrypted_data << dec.final
+  # puts "decryped #{decrypted_data}"
 
   decrypted_data.chomp
 end
@@ -64,6 +66,17 @@ end
 def edit(env_name)
   password = get_password
   decrypted = decrypt(File.read(encrypted_key_path(env_name)), password)
+
+  if File.exist?(env_key_path(env_name))
+    plain_key = File.read(env_key_path(env_name))
+    if decrypted == plain_key
+      puts "The keys match."
+    else
+      puts "The keys don't match."
+      puts plain_key
+      puts decrypted
+    end
+  end
   env = {
     'RAILS_MASTER_KEY' => decrypted
   }
